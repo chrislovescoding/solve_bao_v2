@@ -58,6 +58,16 @@ python tools\run_depth_pipeline.py `
   --resume
 ```
 
+Optimization harnesses for native hot paths:
+
+```powershell
+python tools\run_optimization_harness.py export_binary --benchmark-depth 9 --trials 3
+```
+
+```powershell
+python tools\run_optimization_harness.py solve_slice_dag --benchmark-depth 9 --trials 5
+```
+
 ## Current Status
 
 - Rules baseline: `docs/rulespec_v1.md`

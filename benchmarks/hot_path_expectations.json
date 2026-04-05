@@ -1,0 +1,96 @@
+{
+  "export_binary": {
+    "6": {
+      "hashes": {
+        "adjacency_binary": "f96f25f7e527a9641f6ca007d2585f7247a5e1672539097f1ddd72d81661cce2",
+        "edge_binary": "0e45b8f7573554b302b0b4f64d0244b7a7a566a5e8e7e284126a5b8ec289eba6",
+        "state_binary": "cf46d31ed9a104f4adfb8750fbbacd743d920f110e2ec4f1994a238a6597a5da"
+      },
+      "summary": {
+        "depth": 6,
+        "edge_count": 16243,
+        "expanded_state_count": 4388,
+        "nonterminal_edge_count": 15839,
+        "root_local_id": 5237,
+        "root_state_key_hex": "000000000002e6f569b0a676d3d209e4",
+        "rulespec_version": "rulespec-v1.0.0-draft",
+        "sorted_by": "canonical_state_key",
+        "state_count": 15818,
+        "terminal_edge_count": 404,
+        "terminal_state_count": 0
+      }
+    },
+    "9": {
+      "hashes": {
+        "adjacency_binary": "d6592b960f5d83dcfe19dd22a57ce85afe00199b64d03c6ea44984ecf1dde5da",
+        "edge_binary": "1c1c28df931ada035693709db6f28993ff2001e320dc84a1f5e27fcf6272cd2d",
+        "state_binary": "ba1989009b09d0530da841f2e3892ec60b3d7d064f2a494e3c3dafb0ee15ceb6"
+      },
+      "summary": {
+        "depth": 9,
+        "edge_count": 814499,
+        "expanded_state_count": 210026,
+        "nonterminal_edge_count": 782673,
+        "root_local_id": 287516,
+        "root_state_key_hex": "000000000002e6f569b0a676d3d209e4",
+        "rulespec_version": "rulespec-v1.0.0-draft",
+        "sorted_by": "canonical_state_key",
+        "state_count": 778019,
+        "terminal_edge_count": 31826,
+        "terminal_state_count": 0
+      }
+    }
+  },
+  "solve_slice_dag": {
+    "6": {
+      "hashes": {
+        "solution_binary": "0f711430fb2c5f6187f5401d0a801b0aeeca6a59b0ada980e5c250da04f9f3fa"
+      },
+      "summary": {
+        "closed_unresolved_component_count": 1102,
+        "component_count": 4388,
+        "depth": 6,
+        "edge_count": 16243,
+        "expanded_state_count": 4388,
+        "frontier_dependent_component_count": 2911,
+        "frontier_state_count": 11430,
+        "largest_component_size": 1,
+        "resolved_loss_count": 14,
+        "resolved_state_count": 375,
+        "resolved_win_count": 361,
+        "root_local_id": 5237,
+        "root_state_key_hex": "000000000002e6f569b0a676d3d209e4",
+        "root_status": "unknown",
+        "rulespec_version": "rulespec-v1.0.0-draft",
+        "state_count": 15818,
+        "unknown_state_count": 15443,
+        "unresolved_component_count": 4013
+      }
+    },
+    "9": {
+      "hashes": {
+        "solution_binary": "89b5c770c7246f72513e41cd2c29e044de15fff904a7db17616f939215fa043d"
+      },
+      "summary": {
+        "closed_unresolved_component_count": 49758,
+        "component_count": 210026,
+        "depth": 9,
+        "edge_count": 814499,
+        "expanded_state_count": 210026,
+        "frontier_dependent_component_count": 134408,
+        "frontier_state_count": 567993,
+        "largest_component_size": 1,
+        "resolved_loss_count": 896,
+        "resolved_state_count": 25860,
+        "resolved_win_count": 24964,
+        "root_local_id": 287516,
+        "root_state_key_hex": "000000000002e6f569b0a676d3d209e4",
+        "root_status": "unknown",
+        "rulespec_version": "rulespec-v1.0.0-draft",
+        "state_count": 778019,
+        "unknown_state_count": 752159,
+        "unresolved_component_count": 184166
+      }
+    }
+  }
+}

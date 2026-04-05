@@ -2240,3 +2240,63 @@ runtime even though the expanded root-region graph was still acyclic.
 3. Run depth `11` with the updated pipeline.
 4. If depth `11` also remains a DAG, keep using the native fast path while
    building the first native true-SCC fallback for the deeper cyclic regime.
+
+## 2026-04-05 - Optimization Harness for Agent Loops
+
+### Goal
+
+Turn the current hot paths into safe optimization targets for iterative agent
+loops by providing:
+
+- deterministic correctness gates,
+- direct release-binary benchmarking,
+- repeated performance trials,
+- and memory metrics on Linux.
+
+### Files Changed
+
+- `benchmarks/hot_path_expectations.json`
+- `tools/run_optimization_harness.py`
+- `docs/optimization_harness.md`
+- `README.md`
+
+### Changes
+
+- Added deterministic expectations for the current hot paths:
+  `export_binary_graph_slice` and `solve_slice_dag`.
+- The expectations pin exact summary subsets and exact SHA-256 hashes at depths
+  `6` and `9`.
+- Added a new harness driver that:
+  builds the release binary outside measured trials,
+  runs correctness gates first,
+  runs repeated timed trials,
+  and captures Linux peak RSS via `/usr/bin/time -v` when available.
+- Added a solver benchmark mode that can reuse prebuilt larger benchmark shards
+  through explicit state/adjacency/summary paths, which is important for GCP
+  depth-`10+` agent loops.
+
+### Validation
+
+- `python -m py_compile tools\run_optimization_harness.py`
+- `python tools\run_optimization_harness.py export_binary --benchmark-depth 6 --trials 1 --output artifacts\benchmarks\export_binary_harness_smoke.json`
+- `python tools\run_optimization_harness.py solve_slice_dag --benchmark-depth 6 --trials 1 --output artifacts\benchmarks\solve_slice_dag_harness_smoke.json`
+- `python -m unittest discover -s tests -v`
+
+All of the above passed.
+
+### Interpretation
+
+- The hot-path benchmarks are now in the right shape for iterative agent loops.
+- A loop can mutate the target function, rerun the harness, and reject any
+  change that fails the deterministic gates before looking at performance.
+- On Linux GCP machines, the same harness will also report peak RSS, so both
+  speed and memory can be used in acceptance decisions.
+
+### Next Actions
+
+1. Push the harness to GitHub.
+2. Pull it on the GCP VM.
+3. Run the harness there on:
+   `export_binary` with a deeper benchmark depth,
+   and `solve_slice_dag` with the depth-`11` prebuilt shards.
+4. Then let the autonomous optimization loop iterate against those reports.
