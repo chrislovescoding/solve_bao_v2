@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Rust / cargo
+target/
+
+# Generated research outputs
+artifacts/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
