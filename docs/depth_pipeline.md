@@ -20,6 +20,10 @@ It orchestrates:
 The pipeline now streams live step progress and child-script output to stdout,
 so long remote jobs no longer sit silently between artifact writes.
 
+For the `solve_scc` stage, the pipeline now prefers a native DAG slice solver
+and only falls back to the older Python SCC path if the expanded slice actually
+contains cycles.
+
 ## Local Example
 
 ```powershell

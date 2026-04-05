@@ -242,7 +242,7 @@ def main(
             "solve_scc",
             [
                 python,
-                "tools/solve_slice_scc.py",
+                "tools/solve_slice_scc_native.py",
                 "--state-binary",
                 str(state_bin),
                 "--adjacency-binary",

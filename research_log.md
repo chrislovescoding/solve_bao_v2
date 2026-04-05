@@ -2174,3 +2174,69 @@ single-core machine during the hottest phase of depth-10 export.
 4. Measure actual depth-10 wall time and CPU utilization under the parallel
    exporter before deciding whether the SCC stage also needs native
    parallelization immediately.
+
+## 2026-04-05 - Native DAG Solve Fast Path
+
+### Goal
+
+Remove the next depth-pipeline bottleneck after export parallelization. Once the
+binary exporter became fast, the Python SCC/slice solver dominated depth-10
+runtime even though the expanded root-region graph was still acyclic.
+
+### Files Changed
+
+- `native/bao_solver_core/src/bin/solve_slice_dag.rs`
+- `tools/solve_slice_scc_native.py`
+- `tools/run_depth_pipeline.py`
+
+### Changes
+
+- Added a native Rust solver fast path for DAG slices.
+- The native solver:
+  parses the native state and adjacency shards,
+  checks whether the expanded slice is a DAG using topological sort,
+  solves it exactly by reverse topological propagation,
+  writes the normal solution shard and solve summary,
+  and emits a compact DAG-analysis summary.
+- Added a Python wrapper that prefers the native DAG solver and falls back to
+  the existing Python SCC solver only if a cycle is detected.
+- Switched the depth pipeline to call the new wrapper instead of the pure-Python
+  SCC entrypoint directly.
+
+### Validation
+
+- `cargo test` passed after adding the new binary.
+- `python -m unittest discover -s tests -v` still passed with `26` tests green.
+- `python tools\run_depth_pipeline.py --depth 6 --output-dir artifacts\pipeline\native_solve_smoke --skip-jsonl --skip-census`
+  passed end-to-end.
+- Native depth-9 DAG solve matched the previous verified Python depth-9 slice
+  exactly on:
+  `state_count`,
+  `expanded_state_count`,
+  `resolved_state_count`,
+  `resolved_win_count`,
+  `resolved_loss_count`,
+  `unknown_state_count`,
+  `largest_component_size`,
+  `closed_unresolved_component_count`,
+  `frontier_dependent_component_count`,
+  and `root_status`.
+- The native depth-9 DAG solve completed in about `0.29s` of solver time for
+  `210,026` expanded states, versus the earlier Python SCC solve taking on the
+  order of tens of seconds on comparable DAG slices.
+
+### Interpretation
+
+- This is the right speedup for the current root-region regime.
+- As long as the expanded slice remains acyclic, we should not be paying Python
+  SCC costs.
+- The wrapper preserves correctness because genuine cyclic slices still fall
+  back to the older SCC implementation.
+
+### Next Actions
+
+1. Push the native DAG fast path to GitHub.
+2. Pull it on the GCP VM.
+3. Run depth `11` with the updated pipeline.
+4. If depth `11` also remains a DAG, keep using the native fast path while
+   building the first native true-SCC fallback for the deeper cyclic regime.
