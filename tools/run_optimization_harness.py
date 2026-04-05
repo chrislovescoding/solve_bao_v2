@@ -422,6 +422,168 @@ def harness_solve(args: argparse.Namespace, expectations: dict[str, Any]) -> dic
     }
 
 
+def run_python_check(command: list[str]) -> dict[str, Any]:
+    measured = run_measured(command, cwd=ROOT)
+    return {
+        "command": command,
+        "returncode": measured["returncode"],
+        "elapsed_seconds": measured["elapsed_seconds"],
+        "stdout_tail": measured["stdout"][-2000:],
+        "stderr_tail": measured["stderr"][-2000:],
+    }
+
+
+def harness_statekey(args: argparse.Namespace, expectations: dict[str, Any]) -> dict[str, Any]:
+    binary = build_release_binary("bench_statekey")
+    checker = ROOT / "tools" / "check_native_statekeys.py"
+    correctness_results = []
+    for corpus in args.correctness_corpora:
+        command = [sys.executable, str(checker), str(corpus)]
+        result = run_python_check(command)
+        correctness_results.append(
+            {
+                "corpus": str(corpus),
+                "passed": result["returncode"] == 0,
+                "elapsed_seconds": result["elapsed_seconds"],
+                "stdout_tail": result["stdout_tail"],
+                "stderr_tail": result["stderr_tail"],
+            }
+        )
+    if any(not result["passed"] for result in correctness_results):
+        raise RuntimeError("statekey correctness gate failed")
+
+    expected_benchmark = expectations["statekey"]["benchmark"]
+    if str(args.benchmark_corpus).replace("\\", "/") != expected_benchmark["corpus"]:
+        raise RuntimeError("statekey benchmark corpus does not match pinned expectation corpus")
+
+    trial_results = []
+    for trial in range(1, args.trials + 1):
+        command = [
+            str(binary),
+            "--corpus",
+            str(args.benchmark_corpus),
+            "--warmup-iterations",
+            str(args.warmup_iterations),
+            "--iterations",
+            str(args.iterations),
+        ]
+        measured = run_measured(command, cwd=ROOT)
+        if measured["returncode"] != 0:
+            raise RuntimeError(
+                f"bench_statekey failed\nstdout:\n{measured['stdout'][-4000:]}\nstderr:\n{measured['stderr'][-4000:]}"
+            )
+        report = json.loads(measured["stdout"])
+        pack_checksum = report["pack_key"]["checksum_hex"]
+        unpack_checksum = report["unpack_key"]["checksum_hex"]
+        if pack_checksum != expected_benchmark["pack_key_checksum_hex"]:
+            raise RuntimeError("statekey pack_key checksum gate failed")
+        if unpack_checksum != expected_benchmark["unpack_key_checksum_hex"]:
+            raise RuntimeError("statekey unpack_key checksum gate failed")
+        trial_results.append(
+            {
+                "trial": trial,
+                "elapsed_seconds": measured["elapsed_seconds"],
+                "max_rss_kb": measured["max_rss_kb"],
+                "user_seconds": measured["user_seconds"],
+                "sys_seconds": measured["sys_seconds"],
+                "pack_ns_per_op": report["pack_key"]["ns_per_op"],
+                "pack_ops_per_sec": report["pack_key"]["ops_per_sec"],
+                "unpack_ns_per_op": report["unpack_key"]["ns_per_op"],
+                "unpack_ops_per_sec": report["unpack_key"]["ops_per_sec"],
+                "records": report["records"],
+            }
+        )
+    return {
+        "target": "statekey",
+        "binary": str(binary),
+        "benchmark_corpus": str(args.benchmark_corpus),
+        "correctness": correctness_results,
+        "performance_trials": trial_results,
+        "performance_aggregate": aggregate_trials(
+            trial_results,
+            throughput_keys={"pack_ops_per_sec": "pack_ops_per_sec", "unpack_ops_per_sec": "unpack_ops_per_sec"},
+        ),
+    }
+
+
+def harness_movegen(args: argparse.Namespace, expectations: dict[str, Any]) -> dict[str, Any]:
+    binary = build_release_binary("bench_movegen")
+    legal_checker = ROOT / "tools" / "check_native_legal_moves.py"
+    successor_checker = ROOT / "tools" / "check_native_successors.py"
+    correctness_results = []
+    for corpus in args.correctness_corpora:
+        for label, checker in (("legal_moves", legal_checker), ("successors", successor_checker)):
+            command = [sys.executable, str(checker), str(corpus)]
+            result = run_python_check(command)
+            correctness_results.append(
+                {
+                    "corpus": str(corpus),
+                    "check": label,
+                    "passed": result["returncode"] == 0,
+                    "elapsed_seconds": result["elapsed_seconds"],
+                    "stdout_tail": result["stdout_tail"],
+                    "stderr_tail": result["stderr_tail"],
+                }
+            )
+    if any(not result["passed"] for result in correctness_results):
+        raise RuntimeError("movegen correctness gate failed")
+
+    expected_benchmark = expectations["movegen"]["benchmark"]
+    if str(args.benchmark_corpus).replace("\\", "/") != expected_benchmark["corpus"]:
+        raise RuntimeError("movegen benchmark corpus does not match pinned expectation corpus")
+
+    trial_results = []
+    for trial in range(1, args.trials + 1):
+        command = [
+            str(binary),
+            "--corpus",
+            str(args.benchmark_corpus),
+            "--warmup-iterations",
+            str(args.warmup_iterations),
+            "--iterations",
+            str(args.iterations),
+        ]
+        measured = run_measured(command, cwd=ROOT)
+        if measured["returncode"] != 0:
+            raise RuntimeError(
+                f"bench_movegen failed\nstdout:\n{measured['stdout'][-4000:]}\nstderr:\n{measured['stderr'][-4000:]}"
+            )
+        report = json.loads(measured["stdout"])
+        if report["legal_moves"]["checksum_hex"] != expected_benchmark["legal_moves_checksum_hex"]:
+            raise RuntimeError("movegen legal_moves checksum gate failed")
+        if report["apply_move"]["checksum_hex"] != expected_benchmark["apply_move_checksum_hex"]:
+            raise RuntimeError("movegen apply_move checksum gate failed")
+        trial_results.append(
+            {
+                "trial": trial,
+                "elapsed_seconds": measured["elapsed_seconds"],
+                "max_rss_kb": measured["max_rss_kb"],
+                "user_seconds": measured["user_seconds"],
+                "sys_seconds": measured["sys_seconds"],
+                "legal_moves_ns_per_op": report["legal_moves"]["ns_per_op"],
+                "legal_moves_ops_per_sec": report["legal_moves"]["ops_per_sec"],
+                "apply_move_ns_per_op": report["apply_move"]["ns_per_op"],
+                "apply_move_ops_per_sec": report["apply_move"]["ops_per_sec"],
+                "states": report["states"],
+                "legal_move_pairs": report["legal_move_pairs"],
+            }
+        )
+    return {
+        "target": "movegen",
+        "binary": str(binary),
+        "benchmark_corpus": str(args.benchmark_corpus),
+        "correctness": correctness_results,
+        "performance_trials": trial_results,
+        "performance_aggregate": aggregate_trials(
+            trial_results,
+            throughput_keys={
+                "legal_moves_ops_per_sec": "legal_moves_ops_per_sec",
+                "apply_move_ops_per_sec": "apply_move_ops_per_sec",
+            },
+        ),
+    }
+
+
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--correctness-depths", default="6,9", help="Comma-separated deterministic correctness depths.")
     parser.add_argument("--benchmark-depth", type=int, default=9, help="Depth used for the performance benchmark.")
@@ -453,6 +615,52 @@ def main(argv: list[str] | None = None) -> int:
     solve_parser.add_argument("--benchmark-adjacency-binary", type=Path, default=None, help="Optional prebuilt benchmark adjacency shard.")
     solve_parser.add_argument("--benchmark-graph-summary", type=Path, default=None, help="Optional graph summary for prebuilt benchmark shards.")
 
+    statekey_parser = subparsers.add_parser("statekey", help="Correctness+performance harness for state packing kernels.")
+    statekey_parser.add_argument(
+        "--correctness-corpora",
+        type=lambda value: [Path(item) for item in value.split(",") if item],
+        default=[Path("artifacts/reference_corpus_depth2.jsonl"), Path("artifacts/reference_corpus_depth3.jsonl")],
+        help="Comma-separated corpus paths for deterministic statekey checks.",
+    )
+    statekey_parser.add_argument(
+        "--benchmark-corpus",
+        type=Path,
+        default=Path("artifacts/reference_corpus_depth2.jsonl"),
+        help="Corpus path for statekey benchmarking.",
+    )
+    statekey_parser.add_argument("--warmup-iterations", type=int, default=2_000, help="Warmup loop count.")
+    statekey_parser.add_argument("--iterations", type=int, default=200_000, help="Measured loop count.")
+    statekey_parser.add_argument("--trials", type=int, default=3, help="Number of measured benchmark trials.")
+    statekey_parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Report JSON output path. Defaults to artifacts/benchmarks/statekey.json",
+    )
+
+    movegen_parser = subparsers.add_parser("movegen", help="Correctness+performance harness for move-generation kernels.")
+    movegen_parser.add_argument(
+        "--correctness-corpora",
+        type=lambda value: [Path(item) for item in value.split(",") if item],
+        default=[Path("artifacts/reference_corpus_depth2.jsonl"), Path("artifacts/reference_corpus_depth3.jsonl")],
+        help="Comma-separated corpus paths for deterministic movegen checks.",
+    )
+    movegen_parser.add_argument(
+        "--benchmark-corpus",
+        type=Path,
+        default=Path("artifacts/reference_corpus_depth3.jsonl"),
+        help="Corpus path for movegen benchmarking.",
+    )
+    movegen_parser.add_argument("--warmup-iterations", type=int, default=500, help="Warmup loop count.")
+    movegen_parser.add_argument("--iterations", type=int, default=20_000, help="Measured loop count.")
+    movegen_parser.add_argument("--trials", type=int, default=3, help="Number of measured benchmark trials.")
+    movegen_parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Report JSON output path. Defaults to artifacts/benchmarks/movegen.json",
+    )
+
     args = parser.parse_args(argv)
     expectations = load_expectations()
     if args.target == "solve_slice_dag":
@@ -462,8 +670,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.target == "export_binary":
         report = harness_export(args, expectations)
-    else:
+    elif args.target == "solve_slice_dag":
         report = harness_solve(args, expectations)
+    elif args.target == "statekey":
+        report = harness_statekey(args, expectations)
+    else:
+        report = harness_movegen(args, expectations)
 
     report.update(
         {
@@ -480,7 +692,10 @@ def main(argv: list[str] | None = None) -> int:
         }
     )
     if args.output is None:
-        args.output = Path("artifacts/benchmarks") / f"{args.target}_depth{args.benchmark_depth}.json"
+        if hasattr(args, "benchmark_depth"):
+            args.output = Path("artifacts/benchmarks") / f"{args.target}_depth{args.benchmark_depth}.json"
+        else:
+            args.output = Path("artifacts/benchmarks") / f"{args.target}.json"
     write_json(args.output, report)
     print(f"benchmark_report={args.output}")
     return 0

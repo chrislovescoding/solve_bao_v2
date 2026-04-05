@@ -92,5 +92,19 @@
         "unresolved_component_count": 184166
       }
     }
+  },
+  "statekey": {
+    "benchmark": {
+      "corpus": "artifacts/reference_corpus_depth2.jsonl",
+      "pack_key_checksum_hex": "710f253247ee12471f7626cc5a3f49b5",
+      "unpack_key_checksum_hex": "8bda0d232f588855a669126183a1ad06"
+    }
+  },
+  "movegen": {
+    "benchmark": {
+      "corpus": "artifacts/reference_corpus_depth3.jsonl",
+      "legal_moves_checksum_hex": "a2cb5d98e956f34e289abf6cbca063c3",
+      "apply_move_checksum_hex": "6dfe76bb8356c4483e0e874731771d30"
+    }
   }
 }

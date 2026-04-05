@@ -2300,3 +2300,56 @@ All of the above passed.
    `export_binary` with a deeper benchmark depth,
    and `solve_slice_dag` with the depth-`11` prebuilt shards.
 4. Then let the autonomous optimization loop iterate against those reports.
+
+## 2026-04-05 - Extend Harness Coverage to Movegen and Statekey
+
+### Goal
+
+Bring the remaining native hot kernels into the same iterative optimization loop
+framework so agents can safely optimize:
+
+- `movegen`
+- `statekey`
+
+with deterministic correctness gates plus measured speed and memory reports.
+
+### Files Changed
+
+- `benchmarks/hot_path_expectations.json`
+- `tools/run_optimization_harness.py`
+- `docs/optimization_harness.md`
+
+### Changes
+
+- Added pinned benchmark expectations for:
+  - `statekey` on `artifacts/reference_corpus_depth2.jsonl`
+  - `movegen` on `artifacts/reference_corpus_depth3.jsonl`
+- Extended the optimization harness with two new subcommands:
+  - `statekey`
+  - `movegen`
+- Wired `statekey` correctness gates through:
+  - `tools/check_native_statekeys.py`
+- Wired `movegen` correctness gates through:
+  - `tools/check_native_legal_moves.py`
+  - `tools/check_native_successors.py`
+- Added repeated-trial benchmark output for both kernels, including
+  throughput, elapsed time, and peak RSS where available.
+
+### Validation
+
+- `python -m py_compile tools\run_optimization_harness.py`
+- `python tools\run_optimization_harness.py statekey --trials 1 --output artifacts\benchmarks\statekey_harness_smoke.json`
+- `python tools\run_optimization_harness.py movegen --trials 1 --output artifacts\benchmarks\movegen_harness_smoke.json`
+- `python -m unittest discover -s tests -v`
+
+All of the above passed.
+
+### Interpretation
+
+- All four current native optimization targets now have deterministic harnesses:
+  - `export_binary`
+  - `solve_slice_dag`
+  - `movegen`
+  - `statekey`
+- This is enough to start bounded autonomous optimization loops with a stable
+  benchmark-and-correctness wrapper per target.

@@ -5,6 +5,8 @@ native hot paths:
 
 - `export_binary`
 - `solve_slice_dag`
+- `movegen`
+- `statekey`
 
 The driver is:
 
@@ -49,6 +51,18 @@ Native DAG solve benchmark:
 
 ```powershell
 python tools\run_optimization_harness.py solve_slice_dag --benchmark-depth 9 --trials 5
+```
+
+Move-generation benchmark:
+
+```powershell
+python tools\run_optimization_harness.py movegen --trials 3
+```
+
+Statekey benchmark:
+
+```powershell
+python tools\run_optimization_harness.py statekey --trials 3
 ```
 
 Using a larger prebuilt benchmark slice on GCP:
