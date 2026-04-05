@@ -2117,3 +2117,60 @@ needing side-channel process inspection.
 2. Run the Rust test suite locally.
 3. Rerun the remote depth-10 pipeline and confirm live output appears inside
    `tmux` within the first few seconds.
+
+## 2026-04-05 - Parallel Native Export for Depth Runs
+
+### Goal
+
+Fix the major GCP runtime mistake in the binary slice exporter: frontier
+expansion was single-threaded, so a `96`-vCPU VM was effectively being used as a
+single-core machine during the hottest phase of depth-10 export.
+
+### Files Changed
+
+- `native/bao_solver_core/Cargo.toml`
+- `native/bao_solver_core/src/bin/export_binary_graph_slice.rs`
+
+### Changes
+
+- Added `rayon` to the native crate.
+- Parallelized per-state frontier expansion inside each exported depth layer.
+- Parallelized edge sorting and canonical state-key sorting.
+- Parallelized terminal-state annotation over the sorted state set.
+- Added intra-layer progress logging so large frontiers now report
+  `processed/total` while the exporter is still inside the same layer.
+- Preserved artifact semantics:
+  terminal states are still emitted as successor states when the native move
+  result carries a board,
+  and final shard ordering is still normalized by canonical-key and explicit
+  sorting.
+
+### Validation
+
+- `cargo test` passed with `8` Rust tests green after introducing `rayon`.
+- `python tools\run_depth_pipeline.py --depth 6 --output-dir artifacts\pipeline\parallel_export_smoke --skip-jsonl --skip-census`
+  completed successfully.
+- The smoke run produced the expected verified depth-6 totals:
+  `15,818` states,
+  `4,388` expanded states,
+  `16,243` edges,
+  `375` resolved states.
+
+### Interpretation
+
+- The main depth-export bottleneck is now using native data parallelism instead
+  of one core.
+- The previous remote depth-10 run should be considered obsolete from an
+  efficiency standpoint and can be restarted after pulling the new code.
+- SCC solving is still Python-side and remains a later parallelization target,
+  but the binary exporter was the right first fix because it was the stage that
+  visibly pinned one core on the GCP VM.
+
+### Next Actions
+
+1. Push the parallel-export patch to GitHub.
+2. Abort the old single-threaded depth-10 VM run.
+3. Pull the new commit on GCP and rerun depth 10.
+4. Measure actual depth-10 wall time and CPU utilization under the parallel
+   exporter before deciding whether the SCC stage also needs native
+   parallelization immediately.

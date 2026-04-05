@@ -13,5 +13,6 @@ default = []
 serde = []
 
 [dependencies]
+rayon = "1.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

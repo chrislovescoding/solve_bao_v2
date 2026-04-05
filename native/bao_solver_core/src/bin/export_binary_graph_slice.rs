@@ -2,12 +2,14 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use bao_solver_core::{
     apply_move, has_legal_move, initial_state, legal_moves, MoveCode, MoveKind, MoveTermination,
     Player, StateKey, StateWork, RULESPEC_V1_DRAFT,
 };
+use rayon::prelude::*;
 use serde::Serialize;
 
 const HEADER_BYTES: u16 = 64;
@@ -45,6 +47,16 @@ struct EdgeRecord {
     termination: Option<MoveTermination>,
     terminal_winner: Option<Player>,
     result_key: Option<StateKey>,
+}
+
+#[derive(Debug)]
+struct LayerExpansion {
+    source_key: StateKey,
+    outdegree: usize,
+    nonterminal_successor_count: usize,
+    terminal_move_count: usize,
+    edges: Vec<EdgeRecord>,
+    next_states: Vec<(StateKey, StateWork)>,
 }
 
 #[derive(Debug, Serialize)]
@@ -286,6 +298,60 @@ fn write_adjacency_edge_record(
     Ok(())
 }
 
+fn expand_state(
+    state: StateWork,
+    source_depth: usize,
+) -> Result<LayerExpansion, String> {
+    let source_key = state.pack_key();
+    let moves = legal_moves(state);
+    let mut successor_keys = HashSet::new();
+    let mut terminal_move_count = 0usize;
+    let mut edges = Vec::with_capacity(moves.len());
+    let mut next_states = Vec::with_capacity(moves.len());
+
+    for mv in moves.iter().copied() {
+        let result = apply_move(state, mv, false)?;
+        let canonical_state = result.state.map(|next_state| {
+            let canonical = next_state.canonicalized();
+            (canonical.pack_key(), canonical)
+        });
+        let result_key = canonical_state.map(|(key, _)| key);
+
+        if result.terminal_winner.is_some() {
+            terminal_move_count += 1;
+        } else if let Some(next_key) = result_key {
+            successor_keys.insert(next_key);
+        }
+
+        edges.push(EdgeRecord {
+            source_key,
+            source_depth,
+            move_code: mv,
+            move_kind: result.move_kind,
+            sowings: result.sowings,
+            seeds_sown: result.seeds_sown,
+            captures: result.captures,
+            infinite_move: result.infinite_move,
+            termination: result.termination,
+            terminal_winner: result.terminal_winner,
+            result_key,
+        });
+
+        if let Some((next_key, next_state)) = canonical_state {
+            next_states.push((next_key, next_state));
+        }
+    }
+
+    Ok(LayerExpansion {
+        source_key,
+        outdegree: moves.len(),
+        nonterminal_successor_count: successor_keys.len(),
+        terminal_move_count,
+        edges,
+        next_states,
+    })
+}
+
 fn main() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
     let mut depth = 6usize;
@@ -375,54 +441,44 @@ fn main() -> Result<(), String> {
             total_started.elapsed().as_secs_f64()
         );
         let mut next_frontier = HashMap::new();
-        let mut next_frontier_keys = HashSet::new();
-
-        for state in &frontier {
-            let source_key = state.pack_key();
-            let moves = legal_moves(*state);
-            let mut successor_keys = HashSet::new();
-            let mut terminal_move_count = 0usize;
-
-            for mv in moves.iter().copied() {
-                let result = apply_move(*state, mv, false)?;
-                let result_key = result.state.map(|next_state| next_state.canonicalized().pack_key());
-
-                if result.terminal_winner.is_some() {
-                    terminal_move_count += 1;
-                } else if let Some(next_key) = result_key {
-                    successor_keys.insert(next_key);
+        let frontier_len = frontier.len();
+        let progress_step = usize::max(1, frontier_len / 20);
+        let progress_counter = AtomicUsize::new(0);
+        let layer_results = frontier
+            .par_iter()
+            .copied()
+            .map(|state| {
+                let expansion = expand_state(state, current_depth);
+                let completed = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
+                if completed == frontier_len || completed % progress_step == 0 {
+                    eprintln!(
+                        "[export_binary_graph_slice] layer_progress depth_layer={} processed={}/{} elapsed_seconds={:.2}",
+                        current_depth,
+                        completed,
+                        frontier_len,
+                        total_started.elapsed().as_secs_f64()
+                    );
                 }
+                expansion
+            })
+            .collect::<Vec<_>>();
 
-                edges.push(EdgeRecord {
-                    source_key,
-                    source_depth: current_depth,
-                    move_code: mv,
-                    move_kind: result.move_kind,
-                    sowings: result.sowings,
-                    seeds_sown: result.seeds_sown,
-                    captures: result.captures,
-                    infinite_move: result.infinite_move,
-                    termination: result.termination,
-                    terminal_winner: result.terminal_winner,
-                    result_key,
-                });
-
-                if let Some(next_state) = result.state {
-                    let canonical = next_state.canonicalized();
-                    let next_key = canonical.pack_key();
-                    if !nodes.contains_key(&next_key) && next_frontier_keys.insert(next_key) {
-                        next_frontier.insert(next_key, canonical);
-                    }
-                }
-            }
-
+        for expansion in layer_results {
+            let expansion = expansion?;
             let entry = nodes
-                .get_mut(&source_key)
+                .get_mut(&expansion.source_key)
                 .ok_or_else(|| "internal binary graph-slice node missing".to_string())?;
             entry.expanded = true;
-            entry.outdegree = moves.len();
-            entry.nonterminal_successor_count = successor_keys.len();
-            entry.terminal_move_count = terminal_move_count;
+            entry.outdegree = expansion.outdegree;
+            entry.nonterminal_successor_count = expansion.nonterminal_successor_count;
+            entry.terminal_move_count = expansion.terminal_move_count;
+
+            edges.extend(expansion.edges);
+            for (next_key, next_state) in expansion.next_states {
+                if !nodes.contains_key(&next_key) {
+                    next_frontier.entry(next_key).or_insert(next_state);
+                }
+            }
         }
 
         frontier = next_frontier.values().copied().collect();
@@ -454,7 +510,7 @@ fn main() -> Result<(), String> {
         total_started.elapsed().as_secs_f64()
     );
     let sort_started = Instant::now();
-    edges.sort_unstable_by_key(|edge| {
+    edges.par_sort_unstable_by_key(|edge| {
         (
             edge.source_key,
             edge.source_depth,
@@ -463,7 +519,7 @@ fn main() -> Result<(), String> {
         )
     });
     let mut sorted_node_keys = nodes.keys().copied().collect::<Vec<_>>();
-    sorted_node_keys.sort_unstable();
+    sorted_node_keys.par_sort_unstable();
     let sort_ns = sort_started.elapsed().as_nanos() as u64;
     eprintln!(
         "[export_binary_graph_slice] sort_complete state_count={} edge_count={} elapsed_seconds={:.2}",
@@ -490,7 +546,7 @@ fn main() -> Result<(), String> {
 
     let annotation_started = Instant::now();
     let terminal_winner_by_key: HashMap<_, _> = sorted_node_keys
-        .iter()
+        .par_iter()
         .map(|key| {
             let node = nodes
                 .get(key)
