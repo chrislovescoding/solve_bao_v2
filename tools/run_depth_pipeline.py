@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import json
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -32,8 +34,18 @@ def resolve_cargo() -> str:
     raise FileNotFoundError("Could not locate cargo on PATH or under ~/.cargo/bin.")
 
 
+def unbuffered_command(command: list[str]) -> list[str]:
+    if not command:
+        return command
+    executable = Path(command[0]).name.lower()
+    if executable.startswith("python") and "-u" not in command[1:2]:
+        return [command[0], "-u", *command[1:]]
+    return command
+
+
 def run_step(name: str, command: list[str], *, cwd: Path, skip_if_exists: Path | None = None) -> dict[str, object]:
     if skip_if_exists is not None and skip_if_exists.exists():
+        print(f"[pipeline] skip step={name} reason=exists:{skip_if_exists}", flush=True)
         return {
             "name": name,
             "status": "skipped",
@@ -42,20 +54,43 @@ def run_step(name: str, command: list[str], *, cwd: Path, skip_if_exists: Path |
             "elapsed_seconds": 0.0,
         }
 
+    command = unbuffered_command(command)
+    print(f"[pipeline] start step={name}", flush=True)
+    print(f"[pipeline] cwd={cwd}", flush=True)
+    print(f"[pipeline] command={shlex.join(command)}", flush=True)
     started = time.perf_counter()
-    completed = subprocess.run(command, cwd=cwd, capture_output=True, text=True, check=False)
+    tail_lines: deque[str] = deque()
+    tail_chars = 0
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    assert process.stdout is not None
+    for raw_line in process.stdout:
+        print(f"[{name}] {raw_line}", end="", flush=True)
+        tail_lines.append(raw_line)
+        tail_chars += len(raw_line)
+        while tail_chars > 4000 and tail_lines:
+            tail_chars -= len(tail_lines.popleft())
+    process.wait()
     elapsed = time.perf_counter() - started
     step = {
         "name": name,
-        "status": "ok" if completed.returncode == 0 else "failed",
-        "returncode": completed.returncode,
+        "status": "ok" if process.returncode == 0 else "failed",
+        "returncode": process.returncode,
         "command": command,
         "elapsed_seconds": elapsed,
-        "stdout_tail": completed.stdout[-4000:],
-        "stderr_tail": completed.stderr[-4000:],
+        "stdout_tail": "".join(tail_lines),
+        "stderr_tail": "",
     }
-    if completed.returncode != 0:
+    if process.returncode != 0:
+        print(f"[pipeline] failed step={name} elapsed_seconds={elapsed:.2f}", flush=True)
         raise RuntimeError(json.dumps(step, indent=2))
+    print(f"[pipeline] completed step={name} elapsed_seconds={elapsed:.2f}", flush=True)
     return step
 
 
@@ -270,7 +305,7 @@ def main(
     }
     manifest_path = output_dir / f"pipeline_depth{depth}.manifest.json"
     manifest_path.write_text(json.dumps(job_summary, indent=2, sort_keys=True) + "\n", encoding="ascii")
-    print(f"pipeline_manifest={manifest_path}")
+    print(f"[pipeline] pipeline_manifest={manifest_path}", flush=True)
     return 0
 
 

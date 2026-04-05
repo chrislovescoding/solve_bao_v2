@@ -17,6 +17,9 @@ It orchestrates:
 6. solution-shard verification,
 7. a pipeline manifest with per-step timings and artifact paths.
 
+The pipeline now streams live step progress and child-script output to stdout,
+so long remote jobs no longer sit silently between artifact writes.
+
 ## Local Example
 
 ```powershell

@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -67,6 +68,12 @@ def main(
     solution_manifest: Path,
     scc_summary_output: Path,
 ) -> int:
+    started = time.perf_counter()
+
+    def log(message: str) -> None:
+        print(f"[solve_slice_scc] {message}", flush=True)
+
+    log(f"loading_shards state_binary={state_binary} adjacency_binary={adjacency_binary}")
     state_raw = load_shard_bytes(state_binary)
     adjacency_raw = load_shard_bytes(adjacency_binary)
     state_header = parse_native_header(state_raw, b"BAOSTATE")
@@ -74,12 +81,18 @@ def main(
     if adjacency_header.aux_count != state_header.record_count:
         raise ValueError("state and adjacency shard counts do not match")
 
+    log(
+        "decoding_shards "
+        f"depth={state_header.depth} states={state_header.record_count} edges={adjacency_header.record_count}"
+    )
     states = decode_all_native_state_records(state_raw)
     successors = decode_all_native_adjacency_records(state_raw, adjacency_raw, state_records=states)
     expanded_local_ids = [state.local_id for state in states if state.expanded]
     dense_index_by_local = {local_id: index for index, local_id in enumerate(expanded_local_ids)}
 
+    log(f"building_solver_graph expanded_states={len(expanded_local_ids)}")
     solver_moves: list[list[SolverMove]] = []
+    progress_interval = max(1, len(expanded_local_ids) // 20)
     for local_id in expanded_local_ids:
         local_moves: list[SolverMove] = []
         for edge in successors[local_id]:
@@ -100,10 +113,15 @@ def main(
                     )
                 )
         solver_moves.append(local_moves)
+        built_count = len(solver_moves)
+        if built_count == len(expanded_local_ids) or built_count % progress_interval == 0:
+            log(f"solver_graph_progress built={built_count}/{len(expanded_local_ids)}")
 
-    scc_result = solve_via_scc(solver_moves)
+    log("running_scc_solver")
+    scc_result = solve_via_scc(solver_moves, progress=log)
     dense_component_stats = {record.component_id: record for record in scc_result.component_stats}
 
+    log("assembling_solution_records")
     full_solution_records: list[NativeSolutionRecord] = []
     resolved_count = 0
     dense_result_by_local: dict[int, tuple[int, object]] = {}
@@ -149,6 +167,7 @@ def main(
             resolved_count += 1
         full_solution_records.append(record)
 
+    log(f"writing_solution_shard resolved={resolved_count}/{len(full_solution_records)}")
     write_solution_shard(
         solution_output,
         full_solution_records,
@@ -230,6 +249,11 @@ def main(
     }
     scc_summary_output.write_text(json.dumps(scc_payload, indent=2, sort_keys=True) + "\n", encoding="ascii")
 
+    log(
+        "done "
+        f"components={len(scc_result.components)} largest_component={largest_component} "
+        f"resolved={resolved_count} elapsed_seconds={time.perf_counter() - started:.2f}"
+    )
     print(f"output={output}")
     print(f"solution_output={solution_output}")
     print(f"solution_manifest={solution_manifest}")

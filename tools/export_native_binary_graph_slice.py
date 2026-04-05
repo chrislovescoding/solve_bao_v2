@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -89,18 +90,23 @@ def main(
             str(adjacency_output),
         ]
     )
-    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    print(
+        f"[export_native_binary_graph_slice] start depth={depth} profile={'release' if release else 'debug'}",
+        flush=True,
+    )
+    print(f"[export_native_binary_graph_slice] cargo_command={shlex.join(command)}", flush=True)
+    completed = subprocess.run(command, stdout=subprocess.PIPE, text=True, check=False)
     if completed.returncode != 0:
         if completed.stdout:
             print(completed.stdout, end="")
-        if completed.stderr:
-            print(completed.stderr, end="", file=sys.stderr)
         return completed.returncode
 
+    print("[export_native_binary_graph_slice] cargo_export_finished parsing_summary", flush=True)
     summary = json.loads(completed.stdout)
     summary_output.parent.mkdir(parents=True, exist_ok=True)
     summary_output.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="ascii")
 
+    print("[export_native_binary_graph_slice] writing_manifests", flush=True)
     write_manifest(
         states_manifest,
         "native_state_shard_binary_v1",
@@ -154,6 +160,12 @@ def main(
         ],
     )
 
+    print(
+        "[export_native_binary_graph_slice] "
+        f"done states={summary['state_count']} edges={summary['edge_count']} "
+        f"expanded_states={summary['expanded_state_count']}",
+        flush=True,
+    )
     print(f"states_output={states_output}")
     print(f"states_manifest={states_manifest}")
     print(f"edges_output={edges_output}")

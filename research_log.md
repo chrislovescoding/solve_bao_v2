@@ -2067,3 +2067,53 @@ pipeline runs on GCP VMs.
    from one entry point over arbitrary slice depths.
 3. Begin redesigning slice expansion around checkpoints/frontiers so depth `10+`
    does not require full restart from the initial position on every run.
+
+## 2026-04-05 - Live Pipeline Progress for GCP Runs
+
+### Goal
+
+Make the long-running depth pipeline visibly interactive on remote machines so
+we can tell whether a run is expanding, exporting, solving, or hung without
+needing side-channel process inspection.
+
+### Files Changed
+
+- `tools/run_depth_pipeline.py`
+- `tools/export_native_binary_graph_slice.py`
+- `tools/export_native_graph_slice.py`
+- `tools/run_native_shallow_census.py`
+- `tools/solve_slice_scc.py`
+- `bao/scc_solver.py`
+- `native/bao_solver_core/src/bin/export_binary_graph_slice.rs`
+- `docs/depth_pipeline.md`
+
+### Changes
+
+- Changed the top-level depth pipeline to stream merged child output live
+  instead of capturing it silently until step completion.
+- Added explicit stage start, skip, completion, and failure lines in the
+  pipeline driver.
+- Enabled unbuffered Python child execution from the pipeline so progress lines
+  appear promptly.
+- Added live progress lines to the native binary-export wrapper and the SCC
+  slice solver.
+- Added Rust-side exporter progress on stderr for each depth layer and each
+  major write phase.
+- Added SCC solver progress hooks so large SCC passes report phase changes and
+  component-solve progress.
+
+### Expected Effect
+
+- Remote `tmux` sessions should now show:
+  step entry,
+  Rust export depth-layer growth,
+  SCC graph-build progress,
+  SCC phase changes,
+  and final pipeline completion.
+
+### Validation Plan
+
+1. Run the Python test suite locally.
+2. Run the Rust test suite locally.
+3. Rerun the remote depth-10 pipeline and confirm live output appears inside
+   `tmux` within the first few seconds.

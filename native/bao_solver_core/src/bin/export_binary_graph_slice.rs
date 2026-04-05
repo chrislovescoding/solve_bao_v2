@@ -339,6 +339,13 @@ fn main() -> Result<(), String> {
             .map_err(|err| format!("failed creating adjacency output directory: {err}"))?;
     }
 
+    eprintln!(
+        "[export_binary_graph_slice] start depth={} states_output={} edges_output={} adjacency_output={}",
+        depth,
+        states_output.display(),
+        edges_output.display(),
+        adjacency_output.display()
+    );
     let traversal_started = Instant::now();
     let initial = initial_state().canonicalized();
     let initial_key = initial.pack_key();
@@ -359,6 +366,14 @@ fn main() -> Result<(), String> {
     );
 
     for current_depth in 0..depth {
+        eprintln!(
+            "[export_binary_graph_slice] expand depth_layer={} frontier_states={} nodes_so_far={} edges_so_far={} elapsed_seconds={:.2}",
+            current_depth,
+            frontier.len(),
+            nodes.len(),
+            edges.len(),
+            total_started.elapsed().as_secs_f64()
+        );
         let mut next_frontier = HashMap::new();
         let mut next_frontier_keys = HashSet::new();
 
@@ -421,9 +436,23 @@ fn main() -> Result<(), String> {
                 terminal_move_count: 0,
             });
         }
+        eprintln!(
+            "[export_binary_graph_slice] expanded depth_layer={} next_frontier_states={} total_nodes={} total_edges={} elapsed_seconds={:.2}",
+            current_depth,
+            frontier.len(),
+            nodes.len(),
+            edges.len(),
+            total_started.elapsed().as_secs_f64()
+        );
     }
     let traversal_ns = traversal_started.elapsed().as_nanos() as u64;
 
+    eprintln!(
+        "[export_binary_graph_slice] traversal_complete states={} edges={} elapsed_seconds={:.2}",
+        nodes.len(),
+        edges.len(),
+        total_started.elapsed().as_secs_f64()
+    );
     let sort_started = Instant::now();
     edges.sort_unstable_by_key(|edge| {
         (
@@ -436,6 +465,12 @@ fn main() -> Result<(), String> {
     let mut sorted_node_keys = nodes.keys().copied().collect::<Vec<_>>();
     sorted_node_keys.sort_unstable();
     let sort_ns = sort_started.elapsed().as_nanos() as u64;
+    eprintln!(
+        "[export_binary_graph_slice] sort_complete state_count={} edge_count={} elapsed_seconds={:.2}",
+        sorted_node_keys.len(),
+        edges.len(),
+        total_started.elapsed().as_secs_f64()
+    );
 
     let local_id_started = Instant::now();
     let local_id_by_key: HashMap<_, _> = sorted_node_keys
@@ -447,6 +482,11 @@ fn main() -> Result<(), String> {
         .get(&initial_key)
         .ok_or_else(|| "initial state key missing from local-id map".to_string())?;
     let local_id_ns = local_id_started.elapsed().as_nanos() as u64;
+    eprintln!(
+        "[export_binary_graph_slice] local_id_complete root_local_id={} elapsed_seconds={:.2}",
+        root_local_id,
+        total_started.elapsed().as_secs_f64()
+    );
 
     let annotation_started = Instant::now();
     let terminal_winner_by_key: HashMap<_, _> = sorted_node_keys
@@ -477,6 +517,13 @@ fn main() -> Result<(), String> {
     let terminal_edge_count = edges.iter().filter(|edge| edge.terminal_winner.is_some()).count();
     let nonterminal_edge_count = edges.len() - terminal_edge_count;
     let state_annotation_ns = annotation_started.elapsed().as_nanos() as u64;
+    eprintln!(
+        "[export_binary_graph_slice] annotation_complete expanded_states={} terminal_states={} terminal_edges={} elapsed_seconds={:.2}",
+        expanded_state_count,
+        terminal_state_count,
+        terminal_edge_count,
+        total_started.elapsed().as_secs_f64()
+    );
 
     let state_payload_bytes = sorted_node_keys.len() as u64 * u64::from(STATE_RECORD_BYTES);
     let edge_payload_bytes = edges.len() as u64 * u64::from(EDGE_RECORD_BYTES);
@@ -511,6 +558,11 @@ fn main() -> Result<(), String> {
         .flush()
         .map_err(|err| format!("failed flushing state shard: {err}"))?;
     let state_write_ns = state_write_started.elapsed().as_nanos() as u64;
+    eprintln!(
+        "[export_binary_graph_slice] state_write_complete payload_bytes={} elapsed_seconds={:.2}",
+        state_payload_bytes,
+        total_started.elapsed().as_secs_f64()
+    );
 
     let edge_write_started = Instant::now();
     let mut edge_writer = BufWriter::new(
@@ -532,6 +584,11 @@ fn main() -> Result<(), String> {
         .flush()
         .map_err(|err| format!("failed flushing edge shard: {err}"))?;
     let edge_write_ns = edge_write_started.elapsed().as_nanos() as u64;
+    eprintln!(
+        "[export_binary_graph_slice] edge_write_complete payload_bytes={} elapsed_seconds={:.2}",
+        edge_payload_bytes,
+        total_started.elapsed().as_secs_f64()
+    );
 
     let adjacency_write_started = Instant::now();
     let mut adjacency_offsets = vec![0u32; adjacency_offset_count];
@@ -573,6 +630,11 @@ fn main() -> Result<(), String> {
         .map_err(|err| format!("failed flushing adjacency shard: {err}"))?;
     let adjacency_write_ns = adjacency_write_started.elapsed().as_nanos() as u64;
     let total_ns = total_started.elapsed().as_nanos() as u64;
+    eprintln!(
+        "[export_binary_graph_slice] adjacency_write_complete payload_bytes={} elapsed_seconds={:.2}",
+        adjacency_payload_bytes,
+        total_started.elapsed().as_secs_f64()
+    );
 
     let summary = ExportSummary {
         rulespec_version: RULESPEC_V1_DRAFT.version,
@@ -606,6 +668,10 @@ fn main() -> Result<(), String> {
 
     let payload = serde_json::to_string_pretty(&summary)
         .map_err(|err| format!("failed serializing binary export summary: {err}"))?;
+    eprintln!(
+        "[export_binary_graph_slice] done total_seconds={:.2}",
+        total_started.elapsed().as_secs_f64()
+    );
     println!("{payload}");
     Ok(())
 }

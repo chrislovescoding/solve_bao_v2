@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 
 UNKNOWN = "unknown"
@@ -116,13 +117,23 @@ def compute_sccs(node_count: int, edges_by_node: list[list[int]]) -> tuple[list[
     return component_ids, components
 
 
-def solve_via_scc(moves_by_node: list[list[SolverMove]]) -> SccSolveResult:
+def solve_via_scc(
+    moves_by_node: list[list[SolverMove]],
+    progress: Callable[[str], None] | None = None,
+) -> SccSolveResult:
+    def log(message: str) -> None:
+        if progress is not None:
+            progress(message)
+
     node_count = len(moves_by_node)
+    log(f"scc_prepare node_count={node_count}")
     graph_edges = [
         [move.target for move in moves if move.kind == "node" and move.target is not None]
         for moves in moves_by_node
     ]
+    log("scc_compute_start")
     component_ids, components = compute_sccs(node_count, graph_edges)
+    log(f"scc_compute_done component_count={len(components)}")
 
     component_edges: list[set[int]] = [set() for _ in components]
     indegree = [0] * len(components)
@@ -134,6 +145,7 @@ def solve_via_scc(moves_by_node: list[list[SolverMove]]) -> SccSolveResult:
                 component_edges[source_component].add(target_component)
                 indegree[target_component] += 1
 
+    log("scc_condensation_built")
     topo: list[int] = []
     queue = [component_id for component_id, value in enumerate(indegree) if value == 0]
     while queue:
@@ -144,12 +156,14 @@ def solve_via_scc(moves_by_node: list[list[SolverMove]]) -> SccSolveResult:
             if indegree[target] == 0:
                 queue.append(target)
     reverse_topo = list(reversed(topo))
+    log(f"scc_topo_ready component_count={len(reverse_topo)}")
 
     statuses = [UNKNOWN] * node_count
     distances: list[int | None] = [None] * node_count
     best_moves: list[int | None] = [None] * node_count
 
-    for component_id in reverse_topo:
+    progress_interval = max(1, len(reverse_topo) // 20) if reverse_topo else 1
+    for processed, component_id in enumerate(reverse_topo, start=1):
         component_nodes = components[component_id]
         changed = True
         while changed:
@@ -203,7 +217,10 @@ def solve_via_scc(moves_by_node: list[list[SolverMove]]) -> SccSolveResult:
                     distances[node] = best_distance
                     best_moves[node] = best_move
                     changed = True
+        if processed == len(reverse_topo) or processed % progress_interval == 0:
+            log(f"scc_solve_progress processed_components={processed}/{len(reverse_topo)}")
 
+    log("scc_stats_start")
     component_stats: list[ComponentStats] = []
     for component_id, component_nodes in enumerate(components):
         outgoing_components = set()
@@ -252,6 +269,7 @@ def solve_via_scc(moves_by_node: list[list[SolverMove]]) -> SccSolveResult:
             )
         )
 
+    log("scc_stats_done")
     node_results = [
         SolverNodeResult(
             outcome=None if statuses[node] == UNKNOWN else statuses[node],

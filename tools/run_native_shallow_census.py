@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -40,16 +41,17 @@ def main(depth: int, output: Path, release: bool) -> int:
             str(depth),
         ]
     )
-    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    print(f"[run_native_shallow_census] start depth={depth} profile={'release' if release else 'debug'}", flush=True)
+    print(f"[run_native_shallow_census] cargo_command={shlex.join(command)}", flush=True)
+    completed = subprocess.run(command, stdout=subprocess.PIPE, text=True, check=False)
     if completed.returncode != 0:
         if completed.stdout:
             print(completed.stdout, end="")
-        if completed.stderr:
-            print(completed.stderr, end="", file=sys.stderr)
         return completed.returncode
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(completed.stdout, encoding="ascii")
+    print(f"[run_native_shallow_census] done output={output}", flush=True)
     print(f"census_report={output}")
     return 0
 
